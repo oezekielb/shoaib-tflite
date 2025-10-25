@@ -3,6 +3,7 @@
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
 #include "shoaib_har_cnn_quant.h"
+#include "MyBoschSensor.h"
 
 // Tensor arena size — tune down/up as needed (start 48k)
 constexpr int kTensorArenaSize = 48 * 1024;
@@ -14,6 +15,33 @@ static tflite::MicroInterpreter* tflInterpreter = nullptr;
 static TfLiteTensor* tflInputTensor = nullptr;
 static TfLiteTensor* tflOutputTensor = nullptr;
 static const tflite::Model* tflModel = nullptr;
+
+// Quantization parameters
+float scale; // input quantization scale
+int zero_point; // input quantization zero point
+
+uint signal_size = 0;
+void set_input_tensor(uint idx, float value) {
+  int32_t q_value = (int32_t)round(value / scale) + zero_point;
+  if (q_value < -128) q_value = -128;
+  if (q_value > 127) q_value = 127;
+  tflInputTensor->data.int8[idx] = (int8_t)q_value;
+}
+
+void handle_signal() {
+  float ax, ay, az, gx, gy, gz;
+  if (myIMU.readAcceleration(ax, ay, az) && myIMU.readGyroscope(gx, gy, gz)) {
+    uint idx = signal_size * 6;
+    // Fill input tensor with quantized values
+    set_input_tensor(idx + 0, ax);
+    set_input_tensor(idx + 1, ay);
+    set_input_tensor(idx + 2, az);
+    set_input_tensor(idx + 3, gx);
+    set_input_tensor(idx + 4, gy);
+    set_input_tensor(idx + 5, gz);
+    signal_size++;
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -58,6 +86,9 @@ void setup() {
   tflInputTensor = tflInterpreter->input(0);
   tflOutputTensor = tflInterpreter->output(0);
 
+  scale = tflInputTensor->params.scale;
+  zero_point = tflInputTensor->params.zero_point;
+
   Serial.print("Input type: ");
   Serial.println(tflInputTensor->type);  // 9 for int8
   Serial.print("Input dims: ");
@@ -66,25 +97,31 @@ void setup() {
     Serial.print(i < tflInputTensor->dims->size-1 ? "x":"\n");
   }
 
+  Serial.print("Initializing IMU...");
+  myIMU.debug(Serial);
+  myIMU.onInterrupt(handle_signal);
+  // initialize the IMU
+  if (!myIMU.begin()) {
+    Serial.println("Failed to initialize IMU!");
+    while (1);
+  }
+
+  // print out the samples rates of the IMUs
+  Serial.print("Accelerometer sample rate = ");
+  Serial.print(myIMU.accelerationSampleRate());
+  Serial.println(" Hz");
+  Serial.print("Gyroscope sample rate = ");
+  Serial.print(myIMU.gyroscopeSampleRate());
+  Serial.println(" Hz");
+
   Serial.println("Setup complete.");
 }
 
 void loop() {
-  // Use quantization params: scale & zero_point to fill input properly
-  const float scale = tflInputTensor->params.scale;        // e.g. 0.0039
-  const int zero_point = tflInputTensor->params.zero_point; // e.g. -128
-
-  int n = 1;
-  for (int i=0;i<tflInputTensor->dims->size;i++) n *= tflInputTensor->dims->data[i];
-
-  // Fill with pseudo-random quantized values (centered around zero)
-  for (int i = 0; i < n; i++) {
-    // create a float in [-1, 1], then quantize to int8 using tensor params
-    float v = (float)(rand() % 201 - 100) / 100.0f; // -1.0 .. +1.0
-    int32_t q = (int32_t)round(v / scale) + zero_point;
-    if (q < -128) q = -128;
-    if (q > 127) q = 127;
-    tflInputTensor->data.int8[i] = (int8_t)q;
+  if (signal_size < 128) {
+    Serial.println("Collecting signal...");
+    delay(100); // wait for more data
+    return;
   }
 
   Serial.println("Running inference...");
@@ -105,5 +142,6 @@ void loop() {
     Serial.println(tflOutputTensor->data.int8[i]);
   }
 
+  signal_size = 0; // reset for next signal
   delay(1000);
 }
