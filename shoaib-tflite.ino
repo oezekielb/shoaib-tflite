@@ -63,11 +63,6 @@ void setup() {
   micro_op_resolver.AddExpandDims();
   micro_op_resolver.AddFullyConnected();
   micro_op_resolver.AddSoftmax();
-  micro_op_resolver.AddQuantize();
-  micro_op_resolver.AddDequantize();
-  micro_op_resolver.AddRelu();           // in case activation uses RELU
-  micro_op_resolver.AddSqueeze();        // sometimes appears when reshaping
-  micro_op_resolver.AddDepthwiseConv2D();// if depthwise conv is in model
   // --- add other ops your model requires ---
 
   // Create the interpreter statically
@@ -119,7 +114,7 @@ void setup() {
 
 void loop() {
   if (signal_size < 128) {
-    Serial.println("Collecting signal...");
+    // Serial.println("Collecting signal...");
     delay(100); // wait for more data
     return;
   }
