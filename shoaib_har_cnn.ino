@@ -2,15 +2,16 @@
 #include <tensorflow/lite/micro/micro_mutable_op_resolver.h>
 #include <tensorflow/lite/micro/micro_interpreter.h>
 #include <tensorflow/lite/schema/schema_generated.h>
-#include "shoaib_har_cnn_quant.h"
-#include "MyBoschSensor.h"
+
+#include "imu_sensor.h"
+#include "shoaib_har_cnn.h"
 
 // Tensor arena size — tune down/up as needed (start 48k)
 constexpr int kTensorArenaSize = 48 * 1024;
 alignas(16) static uint8_t tensor_arena[kTensorArenaSize];
 
 // ---- Make resolver and interpreter static/globals so they outlive setup() ----
-static tflite::MicroMutableOpResolver<12> micro_op_resolver; // reserve enough slots
+static tflite::MicroMutableOpResolver<6> microOpResolver;
 static tflite::MicroInterpreter* tflInterpreter = nullptr;
 static TfLiteTensor* tflInputTensor = nullptr;
 static TfLiteTensor* tflOutputTensor = nullptr;
@@ -30,7 +31,7 @@ void set_input_tensor(uint idx, float value) {
 
 void handle_signal() {
   float ax, ay, az, gx, gy, gz;
-  if (myIMU.readAcceleration(ax, ay, az) && myIMU.readGyroscope(gx, gy, gz)) {
+  if (imuSensor.readAcceleration(ax, ay, az) && imuSensor.readGyroscope(gx, gy, gz)) {
     uint idx = signal_size * 6;
     // Fill input tensor with quantized values
     set_input_tensor(idx + 0, ax);
@@ -57,17 +58,16 @@ void setup() {
   }
 
   // Register ops — add everything your model needs (example set)
-  micro_op_resolver.AddConv2D();
-  micro_op_resolver.AddMaxPool2D();
-  micro_op_resolver.AddReshape();
-  micro_op_resolver.AddExpandDims();
-  micro_op_resolver.AddFullyConnected();
-  micro_op_resolver.AddSoftmax();
+  microOpResolver.AddConv2D();
+  microOpResolver.AddMaxPool2D();
+  microOpResolver.AddReshape();
+  microOpResolver.AddExpandDims();
+  microOpResolver.AddFullyConnected();
+  microOpResolver.AddSoftmax();
   // --- add other ops your model requires ---
 
   // Create the interpreter statically
-  static tflite::MicroInterpreter static_interpreter(
-      tflModel, micro_op_resolver, tensor_arena, kTensorArenaSize);
+  static tflite::MicroInterpreter static_interpreter(tflModel, microOpResolver, tensor_arena, kTensorArenaSize);
   tflInterpreter = &static_interpreter;
 
   Serial.println("Allocating tensors...");
@@ -92,21 +92,21 @@ void setup() {
     Serial.print(i < tflInputTensor->dims->size-1 ? "x":"\n");
   }
 
-  Serial.print("Initializing IMU...");
-  myIMU.debug(Serial);
-  myIMU.onInterrupt(handle_signal);
+  Serial.println("Initializing IMU...");
+  imuSensor.debug(Serial);
+  imuSensor.onInterrupt(handle_signal);
   // initialize the IMU
-  if (!myIMU.begin()) {
+  if (!imuSensor.begin()) {
     Serial.println("Failed to initialize IMU!");
     while (1);
   }
 
   // print out the samples rates of the IMUs
   Serial.print("Accelerometer sample rate = ");
-  Serial.print(myIMU.accelerationSampleRate());
+  Serial.print(imuSensor.accelerationSampleRate());
   Serial.println(" Hz");
   Serial.print("Gyroscope sample rate = ");
-  Serial.print(myIMU.gyroscopeSampleRate());
+  Serial.print(imuSensor.gyroscopeSampleRate());
   Serial.println(" Hz");
 
   Serial.println("Setup complete.");

@@ -1,12 +1,12 @@
-#ifndef MY_BOSCH_SENSOR_H
-#define MY_BOSCH_SENSOR_H
+#ifndef IMU_SENSOR_H
+#define IMU_SENSOR_H
 
 #include "Arduino_BMI270_BMM150.h"
 
-class MyBoschSensor: public BoschSensorClass {
+class ImuSensor: public BoschSensorClass {
 
   public:
-    MyBoschSensor(TwoWire& wire = Wire) : BoschSensorClass(wire) {};
+    ImuSensor(TwoWire& wire = Wire) : BoschSensorClass(wire) {};
 
   protected:
     virtual int8_t configure_sensor(struct bmi2_dev *dev)
@@ -55,6 +55,6 @@ class MyBoschSensor: public BoschSensorClass {
     }
 };
 
-MyBoschSensor myIMU(Wire1);
+ImuSensor imuSensor(Wire1);
 
-#endif // MY_BOSCH_SENSOR_H
+#endif // IMU_SENSOR_H
